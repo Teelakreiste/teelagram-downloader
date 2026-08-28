@@ -18,6 +18,7 @@ class Config:
     log_dir: str
     max_concurrent_downloads: int
     min_disk_space_gb: float
+    parallel_connections: int = 4
     bot_token: Optional[str] = None
     admin_user_ids: List[int] = field(default_factory=list)
     auto_download: bool = False
@@ -59,6 +60,13 @@ class Config:
             max_concurrent = 1
 
         try:
+            parallel_conns = int(os.getenv("PARALLEL_CONNECTIONS", "4"))
+            if parallel_conns < 1:
+                parallel_conns = 1
+        except ValueError:
+            parallel_conns = 4
+
+        try:
             min_disk_space = float(os.getenv("MIN_DISK_SPACE_GB", "5.0"))
         except ValueError:
             min_disk_space = 5.0
@@ -95,6 +103,7 @@ class Config:
             data_dir=data_dir,
             log_dir=log_dir,
             max_concurrent_downloads=max_concurrent,
+            parallel_connections=parallel_conns,
             min_disk_space_gb=min_disk_space,
             bot_token=bot_token,
             admin_user_ids=admin_user_ids,

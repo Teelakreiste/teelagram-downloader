@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 .env
 *.session
 *.session-journal
@@ -11,7 +10,6 @@ __pycache__/
 *.pyc
 *.db
 *.part
-=======
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -25,7 +23,6 @@ __pycache__/
 build/
 develop-eggs/
 dist/
-downloads/
 eggs/
 .eggs/
 lib/
@@ -230,4 +227,3 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
->>>>>>> 2a7b5457749d289a74d4c5ae0a88699248ea11a3

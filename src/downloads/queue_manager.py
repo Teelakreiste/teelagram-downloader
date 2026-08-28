@@ -193,11 +193,18 @@ class QueueManager:
                         except Exception as e:
                             logger.error(f"Error en callback on_download_start: {e}")
 
+                    async def refresh_media_for_item():
+                        fresh_msgs = await self.client_mgr.client.get_messages(self.config.chat_id, ids=item.message_id)
+                        if fresh_msgs and fresh_msgs.media:
+                            return fresh_msgs.media
+                        raise ValueError(f"Mensaje ID {item.message_id} ya no tiene media disponible.")
+
                     # Perform streaming download with resume
                     success = await self.downloader.download_item(
                         item=item,
                         media_object=media_obj,
-                        progress_callback=self._on_progress
+                        progress_callback=self._on_progress,
+                        refresh_media_callback=refresh_media_for_item
                     )
 
                     if success:

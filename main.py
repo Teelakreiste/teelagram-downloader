@@ -87,7 +87,8 @@ async def cmd_start(config, repo):
         client=client_mgr.client,
         repo=repo,
         download_dir=config.download_dir,
-        min_disk_space_gb=config.min_disk_space_gb
+        min_disk_space_gb=config.min_disk_space_gb,
+        parallel_connections=config.parallel_connections
     )
 
     queue_mgr = QueueManager(config, repo, client_mgr, downloader)
