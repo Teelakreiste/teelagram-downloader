@@ -22,7 +22,7 @@ class Config:
     bot_token: Optional[str] = None
     admin_user_ids: List[int] = field(default_factory=list)
     auto_download: bool = False
-    bot_progress_update_interval: int = 10
+    bot_progress_update_interval: float = 2.0
 
     @classmethod
     def load(cls) -> "Config":
@@ -86,9 +86,11 @@ class Config:
         auto_download = auto_download_raw in ("true", "1", "yes", "si")
 
         try:
-            bot_progress_interval = int(os.getenv("BOT_PROGRESS_UPDATE_INTERVAL", "10"))
+            bot_progress_interval = float(os.getenv("BOT_PROGRESS_UPDATE_INTERVAL", "2.0"))
+            if bot_progress_interval < 1.0:
+                bot_progress_interval = 1.0
         except ValueError:
-            bot_progress_interval = 10
+            bot_progress_interval = 2.0
 
         os.makedirs(download_dir, exist_ok=True)
         os.makedirs(data_dir, exist_ok=True)
