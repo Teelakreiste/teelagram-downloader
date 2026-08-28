@@ -124,6 +124,16 @@ class QueueManager:
                     await asyncio.sleep(3)
                     continue
 
+                # Ensure client is connected
+                if not self.client_mgr.client.is_connected():
+                    try:
+                        logger.info("Cliente Telethon desconectado. Reconectando...")
+                        await self.client_mgr.client.connect()
+                    except Exception as ce:
+                        logger.warning(f"Esperando restauración de red para reconectar Telethon: {ce}")
+                        await asyncio.sleep(5)
+                        continue
+
                 pending_items = self.repo.get_pending_or_downloading()
 
                 if not pending_items:
@@ -176,6 +186,10 @@ class QueueManager:
                     except FloodWaitError as e:
                         logger.warning(f"FloodWaitError: Esperando {e.seconds}s antes de reintentar...")
                         await asyncio.sleep(e.seconds)
+                        continue
+                    except (OSError, ConnectionError, TimeoutError, asyncio.TimeoutError) as e:
+                        logger.warning(f"Error de red temporal al obtener mensaje ID {item.message_id}: {e}. Reintentando en 5s...")
+                        await asyncio.sleep(5)
                         continue
                     except Exception as e:
                         logger.error(f"Error al obtener mensaje ID {item.message_id}: {e}")

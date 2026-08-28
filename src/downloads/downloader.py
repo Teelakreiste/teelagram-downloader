@@ -98,6 +98,11 @@ class ParallelFileTransferrer:
     async def reconnect_sender(self, sender: MTProtoSender) -> bool:
         """Reconnects a disconnected sender to its target DC."""
         try:
+            if not self.client.is_connected():
+                try:
+                    await self.client.connect()
+                except Exception:
+                    pass
             dc = await self.client._get_dc(self.dc_id)
             try:
                 await sender.disconnect()
@@ -221,10 +226,20 @@ class FileDownloader:
             on_refresh_media=refresh_media_callback
         )
 
-        try:
-            await transferrer.init_senders(conns_to_use)
-        except Exception as e:
-            logger.warning(f"No se pudo inicializar pool paralelo ({e}). Usando modo secuencial de respaldo...")
+        init_ok = False
+        for init_attempt in range(3):
+            try:
+                if not self.client.is_connected():
+                    await self.client.connect()
+                await transferrer.init_senders(conns_to_use)
+                init_ok = True
+                break
+            except Exception as e:
+                logger.warning(f"Intento {init_attempt + 1}/3 de inicializar conexiones paralelas con DC {dc_id} falló: {e}")
+                await asyncio.sleep(2.0)
+
+        if not init_ok:
+            logger.warning("No se pudo inicializar pool paralelo tras 3 intentos. Usando modo secuencial de respaldo...")
             transferrer = None
 
         if transferrer and transferrer.senders:
