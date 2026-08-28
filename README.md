@@ -72,7 +72,7 @@ telegram-downloader/
 
 Asegúrate de estar en el directorio raíz del proyecto:
 ```bash
-cd c:\Users\prosa\Desktop\Codes\teelagram-downloader
+cd telegram-downloader
 ```
 
 ### 2. Crear y Activar el Entorno Virtual (`venv`)
