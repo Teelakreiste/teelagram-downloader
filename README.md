@@ -161,6 +161,3 @@ python main.py start
 ```bash
 python main.py status
 ```
-=======
-# teelagram-downloader
->>>>>>> 2a7b5457749d289a74d4c5ae0a88699248ea11a3
