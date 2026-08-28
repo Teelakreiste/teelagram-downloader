@@ -95,6 +95,27 @@ class ParallelFileTransferrer:
 
         logger.info(f"Pool de {len(self.senders)} conexiones paralelas establecido con DC {self.dc_id}.")
 
+    async def reconnect_sender(self, sender: MTProtoSender) -> bool:
+        """Reconnects a disconnected sender to its target DC."""
+        try:
+            dc = await self.client._get_dc(self.dc_id)
+            try:
+                await sender.disconnect()
+            except Exception:
+                pass
+            await sender.connect(self.client._connection(
+                dc.ip_address,
+                dc.port,
+                dc.id,
+                loggers=self.client._log,
+                proxy=self.client._proxy,
+                local_addr=getattr(self.client, '_local_addr', None)
+            ))
+            return True
+        except Exception as e:
+            logger.warning(f"Fallo al reconectar sender con DC {self.dc_id}: {e}")
+            return False
+
     async def cleanup(self) -> None:
         """Gracefully closes all parallel sender connections."""
         if self.senders:
@@ -295,7 +316,7 @@ class FileDownloader:
                 part_offset = aligned_offset + part_idx * CHUNK_SIZE
                 part_limit = min(CHUNK_SIZE, item.file_size - part_offset)
 
-                max_retries = 5
+                max_retries = 10
                 success = False
 
                 for attempt in range(max_retries):
@@ -303,6 +324,10 @@ class FileDownloader:
                         break
 
                     try:
+                        if not sender.is_connected():
+                            logger.info(f"Reconectando sender #{sender_idx} con DC {transferrer.dc_id}...")
+                            await transferrer.reconnect_sender(sender)
+
                         req = GetFileRequest(
                             location=current_location[0],
                             offset=part_offset,
@@ -344,7 +369,12 @@ class FileDownloader:
 
                     except Exception as ex:
                         logger.warning(f"Error temporal en chunk {part_idx} (intento {attempt + 1}/{max_retries}): {ex}")
-                        await asyncio.sleep(1.0)
+                        try:
+                            await sender.disconnect()
+                        except Exception:
+                            pass
+                        wait_time = min(20.0, 2.0 ** min(attempt, 4))
+                        await asyncio.sleep(wait_time)
 
                 if not success and not cancel_event.is_set():
                     if not error_event.is_set():

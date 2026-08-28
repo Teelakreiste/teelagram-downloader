@@ -5,7 +5,8 @@ from telegram.ext import (
     Application,
     ApplicationBuilder,
     CommandHandler,
-    CallbackQueryHandler
+    CallbackQueryHandler,
+    ContextTypes
 )
 from src.config.settings import Config
 from src.services.scan_service import ScanService
@@ -84,6 +85,16 @@ class AdminBotManager:
 
             # Register Callback Query Handler
             self.app.add_handler(CallbackQueryHandler(self.handlers.handle_callback_query))
+
+            # Register Global Error Handler for transient network drops
+            async def bot_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+                err_str = str(context.error) if context.error else ""
+                if "getaddrinfo failed" in err_str or "ConnectError" in err_str or "NetworkError" in err_str:
+                    logger.warning(f"[BOT API] Desconexión temporal de red detectada en polling: {err_str[:120]}")
+                else:
+                    logger.warning(f"[BOT API] Error no crítico en Bot API: {err_str[:120]}")
+
+            self.app.add_error_handler(bot_error_handler)
 
             await self.app.initialize()
             await self._setup_bot_commands()
