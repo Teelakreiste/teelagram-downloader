@@ -1,6 +1,7 @@
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import List, Optional
 from dotenv import load_dotenv
 
 # Load environment variables from .env if present
@@ -17,6 +18,10 @@ class Config:
     log_dir: str
     max_concurrent_downloads: int
     min_disk_space_gb: float
+    bot_token: Optional[str] = None
+    admin_user_ids: List[int] = field(default_factory=list)
+    auto_download: bool = False
+    bot_progress_update_interval: int = 10
 
     @classmethod
     def load(cls) -> "Config":
@@ -58,6 +63,25 @@ class Config:
         except ValueError:
             min_disk_space = 5.0
 
+        # Bot configuration
+        bot_token = os.getenv("BOT_TOKEN", "").strip() or None
+        
+        admin_ids_raw = os.getenv("ADMIN_USER_IDS", "").strip()
+        admin_user_ids: List[int] = []
+        if admin_ids_raw:
+            for part in admin_ids_raw.split(","):
+                part = part.strip()
+                if part.isdigit() or (part.startswith("-") and part[1:].isdigit()):
+                    admin_user_ids.append(int(part))
+
+        auto_download_raw = os.getenv("AUTO_DOWNLOAD", "false").strip().lower()
+        auto_download = auto_download_raw in ("true", "1", "yes", "si")
+
+        try:
+            bot_progress_interval = int(os.getenv("BOT_PROGRESS_UPDATE_INTERVAL", "10"))
+        except ValueError:
+            bot_progress_interval = 10
+
         os.makedirs(download_dir, exist_ok=True)
         os.makedirs(data_dir, exist_ok=True)
         os.makedirs(log_dir, exist_ok=True)
@@ -72,7 +96,12 @@ class Config:
             log_dir=log_dir,
             max_concurrent_downloads=max_concurrent,
             min_disk_space_gb=min_disk_space,
+            bot_token=bot_token,
+            admin_user_ids=admin_user_ids,
+            auto_download=auto_download,
+            bot_progress_update_interval=bot_progress_interval,
         )
+
 
 # Lazy instance helper
 _config_instance = None

@@ -1,33 +1,35 @@
-# Telegram File Downloader (MTProto / Telethon)
+# Telegram File Downloader (MTProto / Telethon) & Bot de Administración
 
-Sistema automatizado en Python para la detección, encolado y descarga de archivos de gran tamaño (aprox. 4 GB por archivo) desde Telegram utilizando **Telethon (MTProto)** y una cuenta de usuario real (NO Bot API).
+Sistema automatizado en Python para la detección, encolado, descarga de archivos de gran tamaño (aprox. 4 GB por archivo) desde Telegram utilizando **Telethon (MTProto)** y administración remota mediante **Telegram Bot API**.
 
 ---
 
 ## 🚀 Características Principales
 
-* **MTProto sin límites de Bot API**: Descarga de archivos de gran tamaño (4 GB+) utilizando el protocolo nativo de Telegram.
-* **Arquitectura Profesional Modular en `src/`**: Separación clara de responsabilidades (`config`, `core`, `database`, `telegram`, `downloads`, `utils`).
-* **Entorno Virtual aislado**: Encapsulado en `venv` para mantener las dependencias aisladas.
-* **Persistencia con SQLite**: Control de estado (`PENDIENTE`, `DESCARGANDO`, `COMPLETADO`, `ERROR`, `CANCELADO`) en `data/downloads.db`.
-* **Reanudación segura (Resume)**: Soporte para archivos temporales `.part` alineados a bloques de 128 KB exigidos por MTProto.
-* **Prevención de duplicados**: Restricción `UNIQUE(chat_id, message_id)` para evitar descargar dos veces el mismo archivo.
-* **Verificación de espacio en disco**: Comprobación previa de espacio disponible antes de iniciar cada descarga.
-* **Interfaz de Consola Dashboard**: Visualización en tiempo real de velocidad (MB/s), porcentaje, ETA y conteo de cola.
-* **Detección de conjuntos divididos**: Notificación automática cuando se completa la descarga de partes divididas (`.part01.rar`, `.7z.001`, etc.).
+* **MTProto para descargas de gran tamaño (4 GB+)**: Las descargas de archivos grandes se ejecutan mediante Telethon/MTProto nativo usando una cuenta de usuario real (sin límites del Bot API).
+* **Bot de Administración Remoto**: Control total del downloader vía Telegram Bot API con panel interactivo (`/start`), menú de comandos autocompletado en Telegram UI, botones inline, progreso en tiempo real y notificaciones.
+* **Seguridad por Lista Blanca**: Filtro de administradores autorizados mediante `ADMIN_USER_IDS`.
+* **Detección Automática & Aprobación**: Escucha mensajes en tiempo real y notifica nuevos archivos con botones inline `[ Descargar ]` / `[ Ignorar ]`. Soporta descarga automática condicional vía `AUTO_DOWNLOAD`.
+* **Guía Interactiva en el Bot (`/guide`)**: Módulo interactivo dentro del chat de Telegram con navegación por pestañas (`Inicio`, `Descargas & .part`, `Comandos`, `Configuración`).
+* **Barra de Progreso Gráfica & Formato HTML**: Renderizado gráfico de avance `[██████░░░░] 62.4%`, códigos monospaciados y badges de estado.
+* **Arquitectura Limpia y Modular**: Separación de capas (`config`, `core`, `database`, `telegram`, `downloads`, `services`, `bot`, `utils`).
+* **Persistencia Única con SQLite**: Control de estado centralizado (`PENDIENTE`, `DESCARGANDO`, `COMPLETADO`, `ERROR`, `CANCELADO`) en `data/downloads.db`.
+* **Reanudación Segura (`.part`)**: Bloques de 128 KB alineados a MTProto. Permite pausar, detener e interrumpir descargas conservando el progreso parcial.
+* **Verificación de Espacio en Disco**: Comprobación previa de espacio disponible antes de iniciar cada descarga.
+* **Compatibilidad 100% CLI**: Se conservan intactos los comandos CLI existentes.
 
 ---
 
-## 📁 Estructura Profesional del Proyecto
+## 📁 Estructura del Proyecto
 
 ```text
 telegram-downloader/
 │
-├── main.py              # Punto de entrada principal (CLI)
-├── requirements.txt     # Dependencias del proyecto
-├── .env.example         # Plantilla de configuración de credenciales
+├── main.py              # Punto de entrada principal (CLI & Inicio de servicios)
+├── requirements.txt     # Dependencias del proyecto (Telethon, python-telegram-bot, etc.)
+├── .env.example         # Plantilla de configuración
 ├── .env                 # Variables de entorno locales
-├── .gitignore           # Archivos excluidos del control de versiones
+├── .gitignore           # Archivos excluidos de git
 ├── README.md            # Documentación del proyecto
 │
 ├── src/                 # Código fuente organizado por responsabilidades
@@ -41,22 +43,39 @@ telegram-downloader/
 │   │   ├── __init__.py
 │   │   └── models.py
 │   │
-│   ├── database/        # Persistencia de datos y SQLite
+│   ├── database/        # Persistencia de datos, SQLite y Repositorios
 │   │   ├── __init__.py
-│   │   └── database.py
+│   │   ├── database.py
+│   │   └── repository.py
 │   │
-│   ├── telegram/        # Integración nativa con Telethon/MTProto
+│   ├── telegram/        # Integración MTProto (Telethon) y listener de mensajes
 │   │   ├── __init__.py
-│   │   └── client.py
+│   │   ├── client.py
+│   │   └── message_handler.py
 │   │
-│   ├── downloads/       # Motor de descargas y gestor de cola
+│   ├── downloads/       # Motor de descargas, gestor de cola y progreso
 │   │   ├── __init__.py
 │   │   ├── downloader.py
-│   │   └── queue_manager.py
+│   │   ├── queue_manager.py
+│   │   └── progress.py
 │   │
-│   └── utils/           # Utilidades generales (Logger)
+│   ├── services/        # Servicios compartidos de negocio (CLI y Bot)
+│   │   ├── __init__.py
+│   │   ├── scan_service.py
+│   │   ├── download_service.py
+│   │   └── status_service.py
+│   │
+│   ├── bot/             # Bot de Administración (Telegram Bot API)
+│   │   ├── __init__.py
+│   │   ├── bot.py
+│   │   ├── handlers.py
+│   │   ├── keyboards.py
+│   │   └── notifications.py
+│   │
+│   └── utils/           # Utilidades generales (Logger y Filesystem)
 │       ├── __init__.py
-│       └── logger.py
+│       ├── logger.py
+│       └── filesystem.py
 │
 ├── venv/                # Entorno virtual aislado de Python
 ├── data/                # Base de datos SQLite (downloads.db) y sesión Telethon
@@ -66,98 +85,123 @@ telegram-downloader/
 
 ---
 
-## 🛠️ Instalación y Configuración del Entorno Virtual
+## 🛠️ Instalación y Configuración
 
-### 1. Clonar o descargar el proyecto
-
-Asegúrate de estar en el directorio raíz del proyecto:
-```bash
-cd telegram-downloader
-```
-
-### 2. Crear y Activar el Entorno Virtual (`venv`)
+### 1. Activar el Entorno Virtual (`venv`) e Instalar Dependencias
 
 **En Windows (PowerShell):**
 ```powershell
-python -m venv venv
 .\venv\Scripts\Activate.ps1
-```
-
-**En Windows (CMD):**
-```cmd
-python -m venv venv
-venv\Scripts\activate.bat
+pip install -r requirements.txt
 ```
 
 **En Linux / macOS:**
 ```bash
-python3 -m venv venv
 source venv/bin/activate
-```
-
-### 3. Instalar Dependencias
-
-Con el entorno virtual activado:
-```bash
 pip install -r requirements.txt
 ```
 
 ---
 
-## 🔑 Configuración de Credenciales (`.env`)
+## 🔑 Variables de Entorno (`.env`)
 
-Copia el archivo de plantilla `.env.example` a `.env`:
-```bash
-cp .env.example .env
-```
-
-Edita `.env` con tus datos de Telegram:
+Configura tus datos en `.env`:
 ```env
-# Obtén tu API_ID y API_HASH en https://my.telegram.org
+# Telethon (MTProto - Cuenta de usuario real)
 API_ID=12345678
 API_HASH=tu_api_hash_aqui
 PHONE_NUMBER=+573001234567
-
-# ID del chat de Telegram a vigilar (los supergrupos/canales suelen iniciar con -100)
 CHAT_ID=-1001234567890
 
-# Rutas de almacenamiento
+# Bot de Administración (Telegram Bot API)
+BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz
+ADMIN_USER_IDS=123456789,987654321
+
+# Descarga automática y frecuencia de actualización
+AUTO_DOWNLOAD=false
+BOT_PROGRESS_UPDATE_INTERVAL=10
+
+# Directorios
 DOWNLOAD_DIR=./downloads
 DATA_DIR=./data
 LOG_DIR=./logs
 
-# Configuración de cola y disco
+# Cola y disco
 MAX_CONCURRENT_DOWNLOADS=1
 MIN_DISK_SPACE_GB=5.0
 ```
 
 ---
 
-## 💻 Uso de la Aplicación
+## 📖 Guía de Uso Completa
 
-Todos los comandos se ejecutan a través de `main.py` utilizando el entorno virtual:
+### 1. Requisitos Previos
+1. **Credenciales de Telethon**: Obtén tu `API_ID` y `API_HASH` en [my.telegram.org](https://my.telegram.org).
+2. **Bot Token**: Crea un bot con [@BotFather](https://t.me/BotFather) y copia el `BOT_TOKEN`.
+3. **Admin User ID**: Obtén tu ID numérico de Telegram usando [@userinfobot](https://t.me/userinfobot) y colócalo en `ADMIN_USER_IDS`.
 
-### 1. Autenticación Inicial
+### 2. Flujo de Inicio Rápido
+1. **Autenticación Telethon**:
+   ```bash
+   python main.py auth
+   ```
+2. **Obtener CHAT_ID del canal o grupo**:
+   ```bash
+   python main.py list-chats
+   ```
+3. **Escaneo de archivos del chat**:
+   ```bash
+   python main.py scan
+   ```
+4. **Iniciar todo el sistema (Telethon + Queue + Bot)**:
+   ```bash
+   python main.py start
+   ```
+
+---
+
+## 💻 Comandos CLI
+
+Todos los comandos CLI continúan funcionando exactamente igual:
+
 ```bash
-python main.py auth
+python main.py auth         # Autenticación interactiva con Telethon
+python main.py list-chats   # Lista los chats recientes para identificar CHAT_ID
+python main.py scan         # Escanea el chat configurado y registra archivos en SQLite
+python main.py start        # Inicia Telethon, la cola de descargas y el Bot de Administración
+python main.py status       # Muestra estadísticas y últimos registros en consola
 ```
 
-### 2. Listar Chats (para obtener el `CHAT_ID`)
-```bash
-python main.py list-chats
-```
+---
 
-### 3. Escanear Archivos Existentes
-```bash
-python main.py scan
-```
+## 🤖 Bot de Administración de Telegram
 
-### 4. Iniciar el Servicio de Descargas
-```bash
-python main.py start
-```
+Cuando ejecutas `python main.py start`, el Bot de Administración se conecta de forma paralela en el mismo proceso.
 
-### 5. Consultar Estado de la Cola
-```bash
-python main.py status
-```
+### Comandos del Bot:
+* `/start` — Panel interactivo de administración y resumen de estado.
+* `/status` — Estado del sistema y barra de progreso gráfica de la descarga activa.
+* `/scan` — Ejecuta el escaneo del chat en tiempo real.
+* `/files` — Explorador de archivos paginados con filtros (`Todos`, `Pendientes`, `Descargando`, `Completados`, `Errores`).
+* `/queue` — Muestra los archivos pendientes en la cola.
+* `/downloads` — Muestra la descarga activa actual.
+* `/start_downloads` — Inicia o reanuda el procesamiento de la cola de descargas.
+* `/stop_downloads` — Pausa la cola para que no se inicien nuevos archivos.
+* `/cancel` — Solicita confirmación y cancela la descarga activa conservando el archivo `.part`.
+* `/guide` — Guía de uso interactiva por pestañas dentro del chat.
+* `/help` — Menú de ayuda rápida.
+
+---
+
+## 💾 Descargas Grandes & Archivos `.part`
+
+- **Archivos de 4 GB+**: Se descargan exclusivamente por el protocolo MTProto nativo mediante Telethon.
+- **Reanudación Segura**: Si el proceso se detiene o se envía `/cancel`, el archivo parcial `nombre.rar.part` se **conserva**. Al reanudar, se continuará automáticamente desde el último byte descargado.
+- **Verificación de Disco**: Comprobación previa de espacio con `shutil.disk_usage`. Si no hay suficiente espacio, la descarga no iniciará y avisará al administrador.
+
+---
+
+## 🛡️ Seguridad
+
+El bot rechaza automáticamente cualquier comando de usuarios cuyos Telegram IDs no estén incluidos en `ADMIN_USER_IDS` respondiendo:
+> *No tienes autorización para utilizar este bot.*

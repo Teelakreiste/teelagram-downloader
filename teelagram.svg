@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f172a"></stop>
+      <stop offset="100%" stop-color="#1e293b"></stop>
+    </linearGradient>
+  </defs>
+
+  <rect width="800" height="450" rx="24" fill="url(#bg)"></rect>
+
+  <!-- Telegram-style icon -->
+  <circle cx="150" cy="190" r="72" fill="#229ED9"></circle>
+
+  <path d="M108 187l82-32c8-3 14 1 11 11l-14 66c-2 9-7 11-14 7l-25-18-12 12c-2 2-4 4-8 4l2-26 47-43c2-2-1-3-4-1l-58 36-25-8c-8-2-8-8 3-12z" fill="#fff"></path>
+
+  <!-- Title -->
+  <text x="260" y="175" font-family="Arial, Helvetica, sans-serif" font-size="42" font-weight="700" fill="#ffffff">
+    Telegram Downloader
+  </text>
+
+  <text x="260" y="220" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#94a3b8">
+    Large file download manager
+  </text>
+
+  <!-- Features -->
+  <g font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#cbd5e1">
+    <text x="120" y="320">• Telethon / MTProto</text>
+    <text x="120" y="355">• Persistent download queue</text>
+    <text x="120" y="390">• Resume after interruptions</text>
+
+    <text x="470" y="320">• SQLite persistence</text>
+    <text x="470" y="355">• Concurrent downloads</text>
+    <text x="470" y="390">• Progress monitoring</text>
+  </g>
+
+  <text x="400" y="425" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="14" fill="#64748b">
+    Python • Telethon • SQLite
+  </text>
+</svg>

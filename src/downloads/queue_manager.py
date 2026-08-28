@@ -2,27 +2,37 @@ import os
 import sys
 import asyncio
 import time
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Callable
 from telethon.errors import FloodWaitError
 from src.core.models import DownloadItem, DownloadState
-from src.database.database import Database
-from src.downloads.downloader import FileDownloader, format_bytes, format_time
+from src.database.repository import DownloadRepository
+from src.downloads.downloader import FileDownloader
 from src.telegram.client import TelegramClientManager
 from src.config.settings import Config
+from src.utils.filesystem import format_bytes, format_time
 from src.utils.logger import logger
 
 class QueueManager:
-    """Manages persistent SQLite download queue and interactive console UI updates."""
+    """Manages persistent SQLite download queue, pause/resume controls, and event callbacks."""
 
-    def __init__(self, config: Config, db: Database, client_mgr: TelegramClientManager, downloader: FileDownloader):
+    def __init__(self, config: Config, repo: DownloadRepository, client_mgr: TelegramClientManager, downloader: FileDownloader):
         self.config = config
-        self.db = db
+        self.repo = repo
         self.client_mgr = client_mgr
         self.downloader = downloader
         self.is_running = False
+        self.is_paused = False
         self.current_download_info: Dict[str, Any] = {}
+        self.active_item: Optional[DownloadItem] = None
         self.active_file_name: str = "Ninguno"
         self.chat_title: str = str(config.chat_id)
+
+        # Callbacks
+        self.on_download_start: Optional[Callable[[DownloadItem], None]] = None
+        self.on_download_complete: Optional[Callable[[DownloadItem], None]] = None
+        self.on_download_error: Optional[Callable[[DownloadItem, str, int], None]] = None
+        self.on_queue_completed: Optional[Callable[[Dict[str, int]], None]] = None
+        self.on_progress_update: Optional[Callable[[DownloadItem, Dict[str, Any]], None]] = None
 
     def render_console_dashboard(self, stats: Dict[str, int]):
         """Renders clean, non-flooding real-time terminal dashboard."""
@@ -32,7 +42,8 @@ class QueueManager:
         print("========================================")
         print(" TELEGRAM FILE DOWNLOADER")
         print("========================================")
-        print(f"\nChat: {self.chat_title}\n")
+        print(f"\nChat: {self.chat_title}")
+        print(f"Estado de la Cola: {'⏸ Detenida' if self.is_paused else '🟢 Activa'}\n")
         print("Archivos:")
         print(f"  Detectados:   {stats.get('TOTAL', 0):>5}")
         print(f"  Pendientes:   {stats.get('PENDIENTE', 0):>5}")
@@ -60,15 +71,38 @@ class QueueManager:
 
     def _on_progress(self, item: DownloadItem, progress: Dict[str, Any]):
         """Callback from FileDownloader on progress ticks."""
+        self.active_item = item
         self.active_file_name = item.file_name
         self.current_download_info = progress
-        stats = self.db.get_summary_stats()
+        stats = self.repo.get_summary_stats()
         self.render_console_dashboard(stats)
+
+        if self.on_progress_update:
+            try:
+                self.on_progress_update(item, progress)
+            except Exception as e:
+                logger.error(f"Error en callback on_progress_update: {e}")
+
+    def start_downloads(self):
+        """Resumes/starts processing the queue."""
+        self.is_paused = False
+        logger.info("Procesamiento de la cola iniciado/reanudado.")
+
+    def stop_downloads(self):
+        """Pauses processing new files in queue (current file will finish unless cancelled)."""
+        self.is_paused = True
+        logger.info("Procesamiento de la cola detenido. No se iniciarán nuevos archivos.")
+
+    def cancel_active_download(self):
+        """Immediately cancels current active download."""
+        if self.active_item:
+            logger.info(f"Solicitando cancelación de descarga activa: {self.active_file_name}")
+            self.downloader.request_cancel()
 
     async def process_queue_loop(self):
         """Main loop that continuously pulls tasks from SQLite queue and processes downloads."""
         self.is_running = True
-        logger.info("Iniciando servicio de cola de descargas...")
+        logger.info("Iniciando bucle del gestor de colas de descargas...")
 
         try:
             entity = await self.client_mgr.client.get_entity(self.config.chat_id)
@@ -76,37 +110,66 @@ class QueueManager:
         except Exception:
             self.chat_title = str(self.config.chat_id)
 
+        had_pending_work = False
+
         while self.is_running:
             try:
-                stats = self.db.get_summary_stats()
-                pending_items = self.db.get_pending_or_downloading()
+                stats = self.repo.get_summary_stats()
+
+                if self.is_paused:
+                    self.active_file_name = "Ninguno"
+                    self.active_item = None
+                    self.current_download_info = {}
+                    self.render_console_dashboard(stats)
+                    await asyncio.sleep(3)
+                    continue
+
+                pending_items = self.repo.get_pending_or_downloading()
 
                 if not pending_items:
+                    if had_pending_work:
+                        logger.info("Todas las descargas pendientes de la cola han sido completadas.")
+                        had_pending_work = False
+                        if self.on_queue_completed:
+                            try:
+                                self.on_queue_completed(stats)
+                            except Exception as e:
+                                logger.error(f"Error en callback on_queue_completed: {e}")
+
                     self.active_file_name = "Ninguno"
+                    self.active_item = None
                     self.current_download_info = {}
                     self.render_console_dashboard(stats)
                     await asyncio.sleep(5)
                     continue
 
+                had_pending_work = True
+
                 # Process tasks up to MAX_CONCURRENT_DOWNLOADS
                 batch = pending_items[:self.config.max_concurrent_downloads]
 
                 for item in batch:
-                    if not self.is_running:
+                    if not self.is_running or self.is_paused:
                         break
 
                     # Check max retry limit (5 retries)
                     if item.retry_count >= 5:
-                        logger.error(f"El archivo {item.file_name} ha alcanzado el límite máximo de reintentos (5). Marcando como ERROR.")
-                        self.db.update_status(item.id, DownloadState.ERROR, last_error="Límite máximo de reintentos alcanzado")
+                        err_msg = "Límite máximo de reintentos (5) alcanzado"
+                        logger.error(f"El archivo {item.file_name} ha alcanzado el límite máximo de reintentos.")
+                        self.repo.update_status(item.id, DownloadState.ERROR, last_error=err_msg)
+                        if self.on_download_error:
+                            self.on_download_error(item, err_msg, item.retry_count)
                         continue
 
                     # Fetch Telegram Message object
                     try:
                         messages = await self.client_mgr.client.get_messages(self.config.chat_id, ids=item.message_id)
                         if not messages or not messages.media:
-                            logger.error(f"Mensaje ID {item.message_id} ya no contiene media descargable en Telegram.")
-                            self.db.update_status(item.id, DownloadState.ERROR, last_error="Mensaje no encontrado o sin media")
+                            err_msg = "Mensaje no encontrado o sin media descargable"
+                            logger.error(f"Mensaje ID {item.message_id} ya no contiene media descargable.")
+                            self.repo.update_status(item.id, DownloadState.ERROR, last_error=err_msg)
+                            if self.on_download_error:
+                                self.on_download_error(item, err_msg, item.retry_count)
                             continue
 
                         media_obj = messages.media
@@ -116,8 +179,19 @@ class QueueManager:
                         continue
                     except Exception as e:
                         logger.error(f"Error al obtener mensaje ID {item.message_id}: {e}")
-                        self.db.update_status(item.id, DownloadState.ERROR, last_error=str(e))
+                        self.repo.update_status(item.id, DownloadState.ERROR, last_error=str(e))
+                        if self.on_download_error:
+                            self.on_download_error(item, str(e), item.retry_count + 1)
                         continue
+
+                    self.active_item = item
+                    self.active_file_name = item.file_name
+
+                    if self.on_download_start:
+                        try:
+                            self.on_download_start(item)
+                        except Exception as e:
+                            logger.error(f"Error en callback on_download_start: {e}")
 
                     # Perform streaming download with resume
                     success = await self.downloader.download_item(
@@ -126,11 +200,26 @@ class QueueManager:
                         progress_callback=self._on_progress
                     )
 
+                    if success:
+                        if self.on_download_complete:
+                            try:
+                                self.on_download_complete(item)
+                            except Exception as e:
+                                logger.error(f"Error en callback on_download_complete: {e}")
+                    else:
+                        updated_item = self.repo.get_item(item.id)
+                        if updated_item and updated_item.status == DownloadState.ERROR:
+                            if self.on_download_error:
+                                try:
+                                    self.on_download_error(updated_item, updated_item.last_error or "Error de descarga", updated_item.retry_count)
+                                except Exception as e:
+                                    logger.error(f"Error en callback on_download_error: {e}")
+
                     self.active_file_name = "Ninguno"
+                    self.active_item = None
                     self.current_download_info = {}
 
                     if not success:
-                        # Pause briefly before continuing queue on error
                         await asyncio.sleep(3)
 
                 await asyncio.sleep(1)
