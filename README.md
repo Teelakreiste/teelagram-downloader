@@ -1,3 +1,5 @@
+![Banner](docs/banner.png)
+
 # Telegram File Downloader (MTProto / Telethon) & Bot de Administración
 
 Sistema automatizado en Python para la detección, encolado, descarga de archivos de gran tamaño (aprox. 4 GB por archivo) desde Telegram utilizando **Telethon (MTProto)** y administración remota mediante **Telegram Bot API**.
