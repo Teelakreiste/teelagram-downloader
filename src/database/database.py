@@ -36,10 +36,17 @@ class Database:
                     last_error TEXT,
                     retry_count INTEGER DEFAULT 0,
                     mime_type TEXT,
+                    priority INTEGER DEFAULT 0,
                     UNIQUE(chat_id, message_id)
                 )
             """)
+            # Auto-migration: add priority column to existing databases
+            existing_cols = [row[1] for row in cursor.execute("PRAGMA table_info(downloads)").fetchall()]
+            if "priority" not in existing_cols:
+                cursor.execute("ALTER TABLE downloads ADD COLUMN priority INTEGER DEFAULT 0")
+                logger.info("Migración DB: columna 'priority' agregada a la tabla downloads.")
             conn.commit()
+
 
     def add_item(self, item: DownloadItem) -> bool:
         """
@@ -71,16 +78,17 @@ class Database:
             return cursor.rowcount > 0
 
     def get_pending_or_downloading(self) -> List[DownloadItem]:
-        """Returns all items that are either PENDIENTE or DESCARGANDO (interrupted)."""
+        """Returns all items that are either PENDIENTE or DESCARGANDO (interrupted), ordered by priority then id."""
         sql = """
             SELECT * FROM downloads 
             WHERE status IN ('PENDIENTE', 'DESCARGANDO')
-            ORDER BY id ASC
+            ORDER BY priority DESC, id ASC
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
             rows = cursor.execute(sql).fetchall()
             return [self._row_to_item(row) for row in rows]
+
 
     def update_status(
         self,
@@ -155,6 +163,49 @@ class Database:
             rows = cursor.execute(sql).fetchall()
             return [self._row_to_item(row) for row in rows]
 
+    def reset_errors_to_pending(self, item_id: Optional[int] = None) -> int:
+        """
+        Resets items in ERROR or CANCELADO state back to PENDIENTE so the queue retries them.
+        Also clears last_error and resets retry_count to 0.
+        If item_id is provided, only that specific item is reset.
+        Returns the number of items reset.
+        """
+        if item_id is not None:
+            sql = """
+                UPDATE downloads
+                SET status = 'PENDIENTE', last_error = NULL, retry_count = 0
+                WHERE id = ? AND status IN ('ERROR', 'CANCELADO')
+            """
+            params = (item_id,)
+        else:
+            sql = """
+                UPDATE downloads
+                SET status = 'PENDIENTE', last_error = NULL, retry_count = 0
+                WHERE status IN ('ERROR', 'CANCELADO')
+            """
+            params = ()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(sql, params)
+            conn.commit()
+            count = cursor.rowcount
+            if count > 0:
+                logger.info(f"Se resetearon {count} item(s) a PENDIENTE para reintento.")
+            return count
+
+    def set_priority(self, item_id: int, priority: int) -> bool:
+        """
+        Sets the download priority for a specific item.
+        Higher values are processed first (default is 0).
+        Returns True if the item was found and updated.
+        """
+        sql = "UPDATE downloads SET priority = ? WHERE id = ?"
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(sql, (priority, item_id))
+            conn.commit()
+            return cursor.rowcount > 0
+
     def _row_to_item(self, row: sqlite3.Row) -> DownloadItem:
         return DownloadItem(
             id=row["id"],
@@ -170,5 +221,7 @@ class Database:
             date_completed=datetime.fromisoformat(row["date_completed"]) if row["date_completed"] else None,
             last_error=row["last_error"],
             retry_count=row["retry_count"],
-            mime_type=row["mime_type"]
+            mime_type=row["mime_type"],
+            priority=row["priority"] if "priority" in row.keys() else 0
         )
+

@@ -101,3 +101,42 @@ def get_stop_now_keyboard() -> InlineKeyboardMarkup:
         ]
     ]
     return InlineKeyboardMarkup(keyboard)
+
+def get_retry_all_keyboard() -> InlineKeyboardMarkup:
+    """Inline keyboard shown when there are errored/cancelled items to retry."""
+    keyboard = [
+        [
+            InlineKeyboardButton("🔁 Reintentar todos los errores", callback_data="retry_all")
+        ],
+        [
+            InlineKeyboardButton("📁 Ver archivos con error", callback_data="cmd_files_ERROR_1")
+        ]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def get_retry_item_keyboard(item_id: int) -> InlineKeyboardMarkup:
+    """Inline keyboard to retry a specific errored/cancelled item."""
+    keyboard = [
+        [
+            InlineKeyboardButton("🔁 Reintentar este archivo", callback_data=f"retry_item_{item_id}"),
+            InlineKeyboardButton("⬆️ Dar prioridad", callback_data=f"priority_set_{item_id}")
+        ]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def get_priority_keyboard(item_id: int, has_priority: bool) -> InlineKeyboardMarkup:
+    """Inline keyboard to set or remove priority for a queued item."""
+    if has_priority:
+        keyboard = [
+            [
+                InlineKeyboardButton("⬇️ Quitar prioridad", callback_data=f"priority_unset_{item_id}")
+            ]
+        ]
+    else:
+        keyboard = [
+            [
+                InlineKeyboardButton("⬆️ Dar prioridad", callback_data=f"priority_set_{item_id}")
+            ]
+        ]
+    return InlineKeyboardMarkup(keyboard)
+

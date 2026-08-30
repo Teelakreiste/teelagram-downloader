@@ -26,3 +26,4 @@ class DownloadItem:
     last_error: Optional[str] = None
     retry_count: int = 0
     mime_type: Optional[str] = None
+    priority: int = 0

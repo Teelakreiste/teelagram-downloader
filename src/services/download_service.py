@@ -50,3 +50,38 @@ class DownloadService:
 
     def is_auto_download_enabled(self) -> bool:
         return self.config.auto_download
+
+    def retry_errors(self, item_id: Optional[int] = None) -> int:
+        """
+        Resets ERROR or CANCELADO items back to PENDIENTE so the queue retries them.
+        If item_id is given, only that item is reset.
+        Returns the number of items reset.
+        """
+        count = self.repo.reset_errors_to_pending(item_id=item_id)
+        if count > 0:
+            label = f"Item ID {item_id}" if item_id else f"{count} item(s)"
+            logger.info(f"{label} reseteado(s) a PENDIENTE para reintento.")
+        return count
+
+    def prioritize_item(self, item_id: int) -> bool:
+        """
+        Moves a download item to the top of the queue by setting priority=1000.
+        Returns True if the item was found and updated.
+        """
+        ok = self.repo.set_priority(item_id, 1000)
+        if ok:
+            item = self.repo.get_item(item_id)
+            logger.info(f"Prioridad máxima asignada a item ID {item_id} ({item.file_name if item else '?'}).")
+        return ok
+
+    def deprioritize_item(self, item_id: int) -> bool:
+        """
+        Removes priority from a download item, returning it to normal queue order (priority=0).
+        Returns True if the item was found and updated.
+        """
+        ok = self.repo.set_priority(item_id, 0)
+        if ok:
+            item = self.repo.get_item(item_id)
+            logger.info(f"Prioridad removida de item ID {item_id} ({item.file_name if item else '?'}).")
+        return ok
+

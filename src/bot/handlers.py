@@ -9,7 +9,10 @@ from src.bot.keyboards import (
     get_files_keyboard,
     get_guide_keyboard,
     get_cancel_confirm_keyboard,
-    get_stop_now_keyboard
+    get_stop_now_keyboard,
+    get_retry_all_keyboard,
+    get_retry_item_keyboard,
+    get_priority_keyboard
 )
 from src.bot.notifications import render_progress_bar
 from src.utils.filesystem import format_bytes, format_time
@@ -98,6 +101,10 @@ class BotHandlers:
             f"• /start_downloads — Iniciar/reanudar la cola\n"
             f"• /stop_downloads — Pausar la cola\n"
             f"• /cancel — Cancelar descarga activa\n"
+            f"• /retry — Reintentar todos los archivos con error\n"
+            f"• /retry &lt;ID&gt; — Reintentar un archivo específico por ID\n"
+            f"• /priority &lt;ID&gt; — Priorizar un archivo (subirlo al tope)\n"
+            f"• /priority &lt;ID&gt; 0 — Quitar prioridad de un archivo\n"
             f"• /guide — Guía de uso completa interactiva\n"
             f"• /help — Mostrar este menú de ayuda"
         )
@@ -106,6 +113,7 @@ class BotHandlers:
             await update.message.reply_text(text, reply_markup=keyboard, parse_mode="HTML")
         elif update.callback_query:
             await update.callback_query.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+
 
     # 3. /guide (Interactive User Guide)
     async def cmd_guide(self, update: Update, context: ContextTypes.DEFAULT_TYPE, tab: str = "quick"):
@@ -149,8 +157,13 @@ class BotHandlers:
                 f"<code>/start_downloads</code> — Iniciar/reanudar descargas\n"
                 f"<code>/stop_downloads</code> — Pausar la cola de descargas\n"
                 f"<code>/cancel</code> — Cancelar descarga activa\n"
+                f"<code>/retry</code> — Reintentar todos los errores\n"
+                f"<code>/retry &lt;ID&gt;</code> — Reintentar archivo específico\n"
+                f"<code>/priority &lt;ID&gt;</code> — Priorizar archivo (tope de cola)\n"
+                f"<code>/priority &lt;ID&gt; 0</code> — Quitar prioridad\n"
                 f"<code>/guide</code> — Esta guía de uso interactiva"
             )
+
         else: # config
             text = (
                 f"<b>⚙️ GUÍA DE CONFIGURACIÓN (.ENV)</b>\n"
@@ -286,7 +299,7 @@ class BotHandlers:
         else:
             for idx, item in enumerate(items, start=1 + (current_page - 1) * 5):
                 st_label = status_symbols.get(item['status'], item['status'])
-                text += f"<b>{idx}.</b> <code>{item['file_name']}</code>\n    📦 {item['formatted_size']} — <b>{st_label}</b>\n\n"
+                text += f"<b>{idx}.</b> <code>{item['file_name']}</code>\n    📦 {item['formatted_size']} — <b>{st_label}</b> — ID: <code>{item['id']}</code>\n\n"
 
         keyboard = get_files_keyboard(status_filter, current_page, total_pages)
 
@@ -314,12 +327,18 @@ class BotHandlers:
             text += "<i>La cola de descargas está vacía.</i>"
         else:
             for idx, item in enumerate(queue_items, start=1):
-                text += f"<b>{idx}.</b> <code>{item['file_name']}</code>\n    📦 <code>{item['formatted_size']}</code>\n\n"
+                priority_tag = " 🔝" if item.get('priority', 0) > 0 else ""
+                text += (
+                    f"<b>{idx}.</b> <code>{item['file_name']}</code>{priority_tag}\n"
+                    f"    📦 <code>{item['formatted_size']}</code> — ID: <code>{item['id']}</code>\n\n"
+                )
+            text += "<i>Usa /priority &lt;ID&gt; para priorizar un archivo.</i>"
 
         if update.message:
             await update.message.reply_text(text, parse_mode="HTML")
         elif update.callback_query:
             await update.callback_query.message.edit_text(text, parse_mode="HTML")
+
 
     # 8. /downloads
     async def cmd_downloads(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -417,7 +436,125 @@ class BotHandlers:
         elif update.callback_query:
             await update.callback_query.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
 
-    # Callback Query Router
+    # 12. /retry [ID]
+    async def cmd_retry(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Resets ERROR/CANCELADO items back to PENDIENTE.
+        Usage: /retry        → all errors
+               /retry <ID>   → specific item
+        """
+        if not await self._check_auth(update):
+            return
+
+        item_id: int | None = None
+        if context.args:
+            try:
+                item_id = int(context.args[0])
+            except ValueError:
+                text = "⚠️ <b>ID inválido.</b> Uso: <code>/retry</code> o <code>/retry &lt;ID&gt;</code>"
+                if update.message:
+                    await update.message.reply_text(text, parse_mode="HTML")
+                return
+
+        count = self.download_service.retry_errors(item_id=item_id)
+
+        if item_id is not None:
+            if count > 0:
+                item = self.download_service.repo.get_item(item_id)
+                name = item.file_name if item else f"ID {item_id}"
+                text = (
+                    f"🔁 <b>ARCHIVO PUESTO EN COLA PARA REINTENTO</b>\n"
+                    f"──────────────────────────\n"
+                    f"📄 <code>{name}</code>\n\n"
+                    f"El archivo fue reseteado a <b>PENDIENTE</b>.\n"
+                    f"Inicia la cola con /start_downloads si está pausada."
+                )
+            else:
+                text = f"ℹ️ El archivo con ID <code>{item_id}</code> no existe o no está en estado ERROR/CANCELADO."
+            if update.message:
+                await update.message.reply_text(text, parse_mode="HTML")
+        else:
+            if count > 0:
+                text = (
+                    f"🔁 <b>ERRORES RESETEADOS</b>\n"
+                    f"──────────────────────────\n"
+                    f"✅ <b>{count}</b> archivo(s) reseteados a <b>PENDIENTE</b>.\n\n"
+                    f"Inicia la cola con /start_downloads si está pausada."
+                )
+                keyboard = None
+            else:
+                text = (
+                    f"ℹ️ <b>Sin errores que reintentar</b>\n"
+                    f"──────────────────────────\n"
+                    f"No hay archivos en estado ERROR o CANCELADO."
+                )
+                keyboard = get_retry_all_keyboard()
+            if update.message:
+                await update.message.reply_text(text, reply_markup=keyboard if count == 0 else None, parse_mode="HTML")
+
+    # 13. /priority <ID> [0]
+    async def cmd_priority(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Sets or removes priority for a download item.
+        Usage: /priority <ID>    → max priority (top of queue)
+               /priority <ID> 0  → remove priority
+        """
+        if not await self._check_auth(update):
+            return
+
+        if not context.args:
+            text = (
+                f"ℹ️ <b>Uso del comando /priority:</b>\n"
+                f"──────────────────────────\n"
+                f"• <code>/priority &lt;ID&gt;</code> — Mover al tope de la cola\n"
+                f"• <code>/priority &lt;ID&gt; 0</code> — Quitar prioridad\n\n"
+                f"Consulta los IDs con /queue"
+            )
+            if update.message:
+                await update.message.reply_text(text, parse_mode="HTML")
+            return
+
+        try:
+            item_id = int(context.args[0])
+        except ValueError:
+            if update.message:
+                await update.message.reply_text("⚠️ <b>ID inválido.</b> Debe ser un número.", parse_mode="HTML")
+            return
+
+        remove_priority = len(context.args) > 1 and context.args[1] == "0"
+
+        if remove_priority:
+            ok = self.download_service.deprioritize_item(item_id)
+            if ok:
+                item = self.download_service.repo.get_item(item_id)
+                name = item.file_name if item else f"ID {item_id}"
+                text = (
+                    f"⬇️ <b>PRIORIDAD REMOVIDA</b>\n"
+                    f"──────────────────────────\n"
+                    f"📄 <code>{name}</code>\n\n"
+                    f"El archivo vuelve al orden normal de la cola."
+                )
+            else:
+                text = f"⚠️ No se encontró el archivo con ID <code>{item_id}</code>."
+        else:
+            ok = self.download_service.prioritize_item(item_id)
+            if ok:
+                item = self.download_service.repo.get_item(item_id)
+                name = item.file_name if item else f"ID {item_id}"
+                text = (
+                    f"🔝 <b>PRIORIDAD MÁXIMA ASIGNADA</b>\n"
+                    f"──────────────────────────\n"
+                    f"📄 <code>{name}</code>\n\n"
+                    f"Este archivo se descargará antes que los demás.\n"
+                    f"Usa <code>/priority {item_id} 0</code> para quitar la prioridad."
+                )
+            else:
+                text = f"⚠️ No se encontró el archivo con ID <code>{item_id}</code>."
+
+        if update.message:
+            await update.message.reply_text(text, parse_mode="HTML")
+        elif update.callback_query:
+            await update.callback_query.message.edit_text(text, parse_mode="HTML")
+
+
     async def handle_callback_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not await self._check_auth(update):
             return
@@ -474,3 +611,61 @@ class BotHandlers:
                 f"• Podrá reanudarse posteriormente."
             )
             await query.message.edit_text(text, parse_mode="HTML")
+        elif data == "retry_all":
+            count = self.download_service.retry_errors()
+            if count > 0:
+                text = (
+                    f"🔁 <b>ERRORES RESETEADOS</b>\n"
+                    f"──────────────────────────\n"
+                    f"✅ <b>{count}</b> archivo(s) reseteados a <b>PENDIENTE</b>.\n\n"
+                    f"Inicia la cola con /start_downloads si está pausada."
+                )
+            else:
+                text = "ℹ️ No hay archivos en estado ERROR o CANCELADO para reintentar."
+            await query.message.edit_text(text, parse_mode="HTML")
+        elif data.startswith("retry_item_"):
+            item_id = int(data.split("_")[2])
+            count = self.download_service.retry_errors(item_id=item_id)
+            if count > 0:
+                item = self.download_service.repo.get_item(item_id)
+                name = item.file_name if item else f"ID {item_id}"
+                text = (
+                    f"🔁 <b>REINTENTO PROGRAMADO</b>\n"
+                    f"──────────────────────────\n"
+                    f"📄 <code>{name}</code>\n\n"
+                    f"Reseteado a <b>PENDIENTE</b>."
+                )
+            else:
+                text = f"ℹ️ El archivo ID <code>{item_id}</code> no está en ERROR/CANCELADO."
+            await query.message.edit_text(text, parse_mode="HTML")
+        elif data.startswith("priority_set_"):
+            item_id = int(data.split("_")[2])
+            ok = self.download_service.prioritize_item(item_id)
+            if ok:
+                item = self.download_service.repo.get_item(item_id)
+                name = item.file_name if item else f"ID {item_id}"
+                text = (
+                    f"🔝 <b>PRIORIDAD MÁXIMA ASIGNADA</b>\n"
+                    f"──────────────────────────\n"
+                    f"📄 <code>{name}</code>\n\n"
+                    f"Se descargará antes que los demás."
+                )
+            else:
+                text = f"⚠️ No se encontró el archivo con ID <code>{item_id}</code>."
+            await query.message.edit_text(text, parse_mode="HTML")
+        elif data.startswith("priority_unset_"):
+            item_id = int(data.split("_")[2])
+            ok = self.download_service.deprioritize_item(item_id)
+            if ok:
+                item = self.download_service.repo.get_item(item_id)
+                name = item.file_name if item else f"ID {item_id}"
+                text = (
+                    f"⬇️ <b>PRIORIDAD REMOVIDA</b>\n"
+                    f"──────────────────────────\n"
+                    f"📄 <code>{name}</code>\n\n"
+                    f"Vuelve al orden normal de la cola."
+                )
+            else:
+                text = f"⚠️ No se encontró el archivo con ID <code>{item_id}</code>."
+            await query.message.edit_text(text, parse_mode="HTML")
+
