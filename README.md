@@ -1,4 +1,4 @@
-![Banner](docs/banner.png)
+![Banner](assets/banner.png)
 
 # Telegram File Downloader (MTProto / Telethon) & Bot de Administración
 

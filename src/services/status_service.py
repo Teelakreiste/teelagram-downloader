@@ -99,6 +99,8 @@ class StatusService:
                 "file_name": item.file_name,
                 "file_size": item.file_size,
                 "formatted_size": format_bytes(item.file_size),
-                "status": item.status.value
+                "status": item.status.value,
+                "priority": item.priority
             })
         return result
+

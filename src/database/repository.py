@@ -88,7 +88,7 @@ class DownloadRepository:
         """Returns all items ordered by ID DESC."""
         return self.db.get_all_items()
 
-    def clear_pending_queue() -> int:
+    def clear_pending_queue(self) -> int:
         """Cancels all currently pending tasks in database."""
         sql = "UPDATE downloads SET status = 'CANCELADO' WHERE status = 'PENDIENTE'"
         with self.db._get_connection() as conn:
@@ -96,3 +96,21 @@ class DownloadRepository:
             cursor.execute(sql)
             conn.commit()
             return cursor.rowcount
+
+    def reset_errors_to_pending(self, item_id: Optional[int] = None) -> int:
+        """
+        Resets ERROR or CANCELADO items back to PENDIENTE for retry.
+        Clears last_error and resets retry_count.
+        If item_id is provided, only that item is reset.
+        Returns the number of items reset.
+        """
+        return self.db.reset_errors_to_pending(item_id=item_id)
+
+    def set_priority(self, item_id: int, priority: int) -> bool:
+        """
+        Sets the priority of a download item.
+        Higher value = processed sooner. Default is 0.
+        Returns True if item was found and updated.
+        """
+        return self.db.set_priority(item_id, priority)
+

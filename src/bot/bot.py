@@ -50,6 +50,8 @@ class AdminBotManager:
             BotCommand("start_downloads", "Iniciar/reanudar descargas en cola"),
             BotCommand("stop_downloads", "Pausar la cola de descargas"),
             BotCommand("cancel", "Cancelar la descarga activa actual"),
+            BotCommand("retry", "Reintentar errores: /retry o /retry <ID>"),
+            BotCommand("priority", "Priorizar archivo: /priority <ID>"),
             BotCommand("guide", "Guía de uso interactiva"),
             BotCommand("help", "Lista de comandos y ayuda rápida")
         ]
@@ -82,6 +84,9 @@ class AdminBotManager:
             self.app.add_handler(CommandHandler("start_downloads", self.handlers.cmd_start_downloads))
             self.app.add_handler(CommandHandler("stop_downloads", self.handlers.cmd_stop_downloads))
             self.app.add_handler(CommandHandler("cancel", self.handlers.cmd_cancel))
+            self.app.add_handler(CommandHandler("retry", self.handlers.cmd_retry))
+            self.app.add_handler(CommandHandler("priority", self.handlers.cmd_priority))
+
 
             # Register Callback Query Handler
             self.app.add_handler(CallbackQueryHandler(self.handlers.handle_callback_query))
