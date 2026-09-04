@@ -1,0 +1,14 @@
+services:
+  telegram-downloader:
+    build: .
+    container_name: telegram-downloader
+
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    volumes:
+      - ./data:/app/data
+      - ./downloads:/app/downloads
+      - ./logs:/app/logs
